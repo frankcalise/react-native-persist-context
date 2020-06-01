@@ -1,5 +1,6 @@
-import React from 'react';
-import PropTypes from 'prop-types';
+import React from "react";
+import PropTypes from "prop-types";
+import AsyncStorage from "@react-native-community/async-storage";
 
 const AuthStateContext = React.createContext();
 const AuthDispatchContext = React.createContext();
@@ -12,13 +13,19 @@ function authReducer(state, action) {
   const { type, payload } = action;
 
   switch (type) {
-    case 'auth/SIGN_IN': {
+    case "auth/REHYDRATE": {
       return {
         ...state,
-        user: payload
+        ...payload,
       };
     }
-    case 'auth/SIGN_OUT': {
+    case "auth/SIGN_IN": {
+      return {
+        ...state,
+        user: payload,
+      };
+    }
+    case "auth/SIGN_OUT": {
       return {
         ...initialState,
       };
@@ -30,9 +37,26 @@ function authReducer(state, action) {
 
 function AuthProvider({ children }) {
   const [state, dispatch] = React.useReducer(authReducer, initialState);
+
+  // rehydrate context from async storage
+  React.useEffect(() => {
+    getData("auth").then((data) => {
+      if (data) {
+        dispatch({ type: "auth/REHYDRATE", payload: data });
+      }
+    });
+  }, []);
+
+  // persist to async storage
+  React.useEffect(() => {
+    storeData('auth', state);
+  }, [state]);
+
   return (
     <AuthStateContext.Provider value={state}>
-      <AuthDispatchContext.Provider value={dispatch}>{children}</AuthDispatchContext.Provider>
+      <AuthDispatchContext.Provider value={dispatch}>
+        {children}
+      </AuthDispatchContext.Provider>
     </AuthStateContext.Provider>
   );
 }
@@ -44,7 +68,7 @@ AuthProvider.propTypes = {
 function useAuthState() {
   const context = React.useContext(AuthStateContext);
   if (context === undefined) {
-    throw new Error('useAuthState must be used within an AuthProvider');
+    throw new Error("useAuthState must be used within an AuthProvider");
   }
   return context;
 }
@@ -52,7 +76,7 @@ function useAuthState() {
 function useAuthDispatch() {
   const context = React.useContext(AuthDispatchContext);
   if (context === undefined) {
-    throw new Error('useAuthDispatch must be used within an AuthProvider');
+    throw new Error("useAuthDispatch must be used within an AuthProvider");
   }
   return context;
 }
@@ -62,9 +86,28 @@ function withAuthContext(Component) {
   return function WrapperComponent(props) {
     return (
       <AuthStateContext.Consumer>
-        {state => <Component {...props} context={state} />}
+        {(state) => <Component {...props} context={state} />}
       </AuthStateContext.Consumer>
     );
   };
 }
 export { AuthProvider, useAuthState, useAuthDispatch, withAuthContext };
+
+const storeData = async (key, value) => {
+  try {
+    await AsyncStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // saving error
+    console.log(e);
+  }
+};
+
+getData = async (key) => {
+  try {
+    const jsonValue = await AsyncStorage.getItem(key);
+    return jsonValue != null ? JSON.parse(jsonValue) : initialState;
+  } catch (e) {
+    // error reading value
+    console.log(e);
+  }
+};
